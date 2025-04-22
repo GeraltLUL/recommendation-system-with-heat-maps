@@ -1,0 +1,401 @@
+{% extends 'base.html' %}
+
+{% block title %}User Management - GameFlow Analytics{% endblock %}
+
+{% macro sort_link(column, display_name, current_sort_by, current_order) %}
+    {% set next_order = 'desc' if current_sort_by == column and current_order == 'asc' else 'asc' %}
+    <a href="{{ url_for('admin.user_management', sort_by=column, order=next_order) }}">
+        {{ display_name }}
+        {% if current_sort_by == column %}
+            {% if current_order == 'asc' %}
+                <span class="sort-arrow">&#x25B2;</span> {# Up arrow ▲ #}
+            {% else %}
+                <span class="sort-arrow">&#x25BC;</span> {# Down arrow ▼ #}
+            {% endif %}
+        {% endif %}
+    </a>
+{% endmacro %}
+
+{% block content %}
+<h2>User Management</h2>
+
+{# Button to trigger Add User modal #}
+<div style="margin-bottom: 1.5rem;">
+    <button type="button" id="openAddUserModalBtn" class="btn btn-primary">Add New User</button>
+</div>
+
+<div style="background-color: var(--card-bg-color); padding: 1.5rem; border-radius: var(--border-radius); box-shadow: var(--box-shadow);">
+    <div class="table-responsive">
+        <table class="table table-striped table-hover table-sm">
+            <thead>
+                <tr style="border-bottom: 1px solid var(--border-color); text-align: left;">
+                    <th style="padding: 0.75rem 1rem;">{{ sort_link('id', 'ID', current_sort_by, current_order) }}</th>
+                    <th style="padding: 0.75rem 1rem;">{{ sort_link('username', 'Username', current_sort_by, current_order) }}</th>
+                    <th style="padding: 0.75rem 1rem;">{{ sort_link('email', 'Email', current_sort_by, current_order) }}</th>
+                    <th style="padding: 0.75rem 1rem;">{{ sort_link('roles', 'Roles', current_sort_by, current_order) }}</th>
+                    <th style="padding: 0.75rem 1rem;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                <tr style="border-bottom: 1px solid var(--border-color);">
+                    <td style="padding: 0.75rem 1rem;">{{ user.id }}</td>
+                    <td style="padding: 0.75rem 1rem;">{{ user.username }}</td>
+                    <td style="padding: 0.75rem 1rem;">{{ user.email }}</td>
+                    <td style="padding: 0.75rem 1rem;">
+                        {# Display roles (should be only one now) #}
+                        {% for role in user.roles %}
+                            {{ role.name }}
+                        {% else %}
+                            <span style="color: var(--text-muted-color);">No roles</span>
+                        {% endfor %}
+                    </td>
+                    <td style="padding: 0.75rem 1rem; display: flex; align-items: center; gap: 0.5rem;">
+                        <button type="button" class="btn btn-sm btn-secondary edit-user-btn" 
+                                data-user-id="{{ user.id }}" 
+                                data-get-url="{{ url_for('admin.get_user_data', user_id=user.id) }}" 
+                                data-update-url="{{ url_for('admin.update_user', user_id=user.id) }}">
+                            Edit
+                        </button>
+                        {% if current_user.id != user.id %}
+                            <form method="POST" action="{{ url_for('admin.delete_user', user_id=user.id) }}" 
+                                  onsubmit="return confirm('Are you sure you want to delete user {{ user.username }}?');" 
+                                  style="display: inline;">
+                                <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                            </form>
+                        {% else %}
+                            <span style="color: var(--text-muted-color); font-style: italic;">(Self)</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5" class="text-center" style="padding: 1rem; color: var(--text-muted-color);">No users found.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Edit User Modal -->
+<div id="editUserModal" class="modal">
+    <div class="modal-content">
+        <span class="close-btn">&times;</span>
+        <h2>Edit User</h2>
+        <form id="editUserForm">
+            <input type="hidden" id="editUserId" name="userId">
+            <div class="form-group">
+                <label for="editUsername">Username</label>
+                <input type="text" id="editUsername" name="username" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label for="editEmail">Email</label>
+                <input type="email" id="editEmail" name="email" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label>Role</label> {# Changed label #}
+                <div id="editRolesRadios">
+                    {% for role in all_roles %}
+                        <div>
+                             {# Changed to radio button #}
+                            <input type="radio" id="editRole_{{ role.id }}" name="role_id" value="{{ role.id }}" required>
+                            <label for="editRole_{{ role.id }}">{{ role.name }}</label>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="editPassword">New Password (optional)</label>
+                <input type="password" id="editPassword" name="password" class="form-control">
+                <small class="text-muted">Leave blank to keep current password.</small>
+            </div>
+             <div id="editUserError" class="alert alert-danger" style="display: none; margin-top: 1rem;"></div>
+            <button type="submit" class="btn btn-primary" style="margin-top: 1rem;">Save Changes</button>
+        </form>
+    </div>
+</div>
+
+<!-- Add User Modal -->
+<div id="addUserModal" class="modal">
+    <div class="modal-content">
+        <span class="close-btn">&times;</span>
+        <h2>Add New User</h2>
+        <form id="addUserForm">
+            {# Add CSRF token here if using Flask-WTF #}
+            <div class="form-group">
+                <label for="addUsername">Username</label>
+                <input type="text" id="addUsername" name="username" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label for="addEmail">Email</label>
+                <input type="email" id="addEmail" name="email" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label for="addPassword">Password</label>
+                <input type="password" id="addPassword" name="password" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label>Role</label> {# Changed label #}
+                <div id="addRolesRadios">
+                    {% for role in all_roles %}
+                        <div>
+                             {# Changed to radio button #}
+                            <input type="radio" id="addRole_{{ role.id }}" name="role_id" value="{{ role.id }}" required> 
+                            <label for="addRole_{{ role.id }}">{{ role.name }}</label>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div id="addUserError" class="alert alert-danger" style="display: none; margin-top: 1rem;"></div>
+            <button type="submit" class="btn btn-primary" style="margin-top: 1rem;">Add User</button>
+        </form>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // --- Edit Modal Logic --- 
+    const editModal = document.getElementById('editUserModal');
+    const editCloseBtn = editModal.querySelector('.close-btn');
+    const editForm = document.getElementById('editUserForm');
+    const editUserIdInput = document.getElementById('editUserId');
+    const editUsernameInput = document.getElementById('editUsername');
+    const editEmailInput = document.getElementById('editEmail');
+    const editRolesRadiosDiv = document.getElementById('editRolesRadios'); // Changed name
+    const editPasswordInput = document.getElementById('editPassword');
+    const editErrorDiv = document.getElementById('editUserError');
+    let currentUpdateUrl = '';
+
+    document.querySelectorAll('.edit-user-btn').forEach(button => {
+        button.addEventListener('click', async (event) => {
+            const userId = button.dataset.userId;
+            const getUrl = button.dataset.getUrl;
+            currentUpdateUrl = button.dataset.updateUrl;
+            
+            console.log(`Editing user ID: ${userId}, Get URL: ${getUrl}`);
+            editErrorDiv.style.display = 'none'; 
+            editErrorDiv.textContent = '';
+            editForm.reset();
+            
+            try {
+                const response = await fetch(getUrl);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const userData = await response.json();
+                console.log("User data received:", userData);
+
+                editUserIdInput.value = userData.id;
+                editUsernameInput.value = userData.username;
+                editEmailInput.value = userData.email;
+
+                // Check the correct role radio button
+                editRolesRadiosDiv.querySelectorAll('input[type="radio"]').forEach(radio => {
+                    radio.checked = (userData.role_id === parseInt(radio.value));
+                });
+                
+                editModal.style.display = 'block';
+            } catch (error) {
+                console.error('Error fetching user data:', error);
+                editErrorDiv.textContent = 'Error fetching user data. Please try again.';
+                editErrorDiv.style.display = 'block';
+            }
+        });
+    });
+
+    editCloseBtn.addEventListener('click', () => { editModal.style.display = 'none'; });
+
+    // --- Add Modal Logic --- 
+    const addModal = document.getElementById('addUserModal');
+    const addCloseBtn = addModal.querySelector('.close-btn');
+    const openAddModalBtn = document.getElementById('openAddUserModalBtn');
+    const addForm = document.getElementById('addUserForm');
+    const addUsernameInput = document.getElementById('addUsername');
+    const addEmailInput = document.getElementById('addEmail');
+    const addPasswordInput = document.getElementById('addPassword');
+    const addRolesRadiosDiv = document.getElementById('addRolesRadios'); // Changed name
+    const addErrorDiv = document.getElementById('addUserError');
+    const createUserUrl = "{{ url_for('admin.create_user') }}";
+
+    openAddModalBtn.addEventListener('click', () => {
+        addForm.reset(); 
+        addErrorDiv.style.display = 'none';
+        addErrorDiv.textContent = '';
+        addModal.style.display = 'block';
+    });
+
+    addCloseBtn.addEventListener('click', () => { addModal.style.display = 'none'; });
+
+    window.addEventListener('click', (event) => {
+        if (event.target === editModal) editModal.style.display = 'none';
+        if (event.target === addModal) addModal.style.display = 'none';
+    });
+
+    // Add Form Submission (updated for single role_id)
+    addForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        addErrorDiv.style.display = 'none';
+        addErrorDiv.textContent = '';
+
+        // Get value from selected radio button
+        const selectedRoleRadio = addRolesRadiosDiv.querySelector('input[type="radio"]:checked');
+        const selectedRoleId = selectedRoleRadio ? selectedRoleRadio.value : null;
+
+        const payload = {
+            username: addUsernameInput.value.trim(),
+            email: addEmailInput.value.trim(),
+            password: addPasswordInput.value,
+            role_id: selectedRoleId // Send single ID or null
+        };
+
+        console.log("Submitting create user to:", createUserUrl, "Payload:", payload);
+
+        try {
+            const response = await fetch(createUserUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(payload)
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || `HTTP error! status: ${response.status}`);
+            console.log("Create successful:", result.message);
+            addModal.style.display = 'none';
+            window.location.reload();
+        } catch (error) {
+            console.error('Error creating user:', error);
+            addErrorDiv.textContent = `Error creating user: ${error.message}`;
+            addErrorDiv.style.display = 'block';
+        }
+    });
+
+    // Edit Form Submission (updated for single role_id)
+    editForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        editErrorDiv.style.display = 'none';
+        editErrorDiv.textContent = '';
+
+        // Get value from selected radio button
+        const selectedRoleRadio = editRolesRadiosDiv.querySelector('input[type="radio"]:checked');
+        const selectedRoleId = selectedRoleRadio ? selectedRoleRadio.value : null;
+        
+        const payload = {
+            username: editUsernameInput.value.trim(),
+            email: editEmailInput.value.trim(),
+            role_id: selectedRoleId, // Send single ID or null
+            password: editPasswordInput.value
+        };
+        
+        if (!payload.password) {
+            delete payload.password;
+        }
+
+        console.log("Submitting update to:", currentUpdateUrl, "Payload:", payload);
+
+        try {
+            const response = await fetch(currentUpdateUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(payload)
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || `HTTP error! status: ${response.status}`);
+            console.log("Update successful:", result.message);
+            editModal.style.display = 'none';
+            window.location.reload(); 
+        } catch (error) {
+            console.error('Error updating user:', error);
+            editErrorDiv.textContent = `Error updating user: ${error.message}`;
+            editErrorDiv.style.display = 'block';
+        }
+    });
+});
+</script>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+    .sort-arrow {
+        font-size: 0.8em;
+        margin-left: 0.3em;
+    }
+    th a {
+        color: inherit; /* Make header links look like normal text */
+        text-decoration: none;
+    }
+    th a:hover {
+        color: var(--primary-color);
+    }
+    .btn-sm {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.875rem;
+        border-radius: 0.2rem;
+    }
+    .btn-secondary {
+        color: #fff;
+        background-color: #6c757d;
+        border-color: #6c757d;
+    }
+    .btn-secondary:hover {
+        background-color: #5a6268;
+        border-color: #545b62;
+    }
+    .btn-danger {
+        color: #fff;
+        background-color: #dc3545;
+        border-color: #dc3545;
+    }
+     .btn-danger:hover {
+        background-color: #c82333;
+        border-color: #bd2130;
+    }
+    .modal {
+        display: none; /* Hidden by default */
+        position: fixed; /* Stay in place */
+        z-index: 1000; /* Sit on top */
+        left: 0;
+        top: 0;
+        width: 100%; /* Full width */
+        height: 100%; /* Full height */
+        overflow: auto; /* Enable scroll if needed */
+        background-color: rgba(0,0,0,0.4); /* Black w/ opacity */
+        padding-top: 60px;
+    }
+    .modal-content {
+        background-color: var(--card-bg-color);
+        margin: 5% auto;
+        padding: 20px;
+        border: 1px solid #888;
+        width: 80%; 
+        max-width: 500px;
+        border-radius: var(--border-radius);
+        position: relative;
+    }
+    .close-btn {
+        color: #aaa;
+        position: absolute;
+        top: 10px;
+        right: 20px;
+        font-size: 28px;
+        font-weight: bold;
+    }
+    .close-btn:hover,
+    .close-btn:focus {
+        color: black;
+        text-decoration: none;
+        cursor: pointer;
+    }
+    /* Adjust styling for radio buttons if needed */
+    #editRolesRadios div, #addRolesRadios div {
+        margin-bottom: 0.5rem;
+    }
+     #editRolesRadios input[type="radio"], #addRolesRadios input[type="radio"] {
+        margin-right: 0.5rem;
+    }
+</style>
+{% endblock %} 

@@ -1,0 +1,397 @@
+{% extends 'base.html' %}
+
+{% block title %}Level Report: {{ level_id }} - GameFlow Analytics{% endblock %}
+
+{% block content %}
+<h2>Level Performance Report: {{ level_id }}</h2>
+
+{# Section for Summary Metrics #}
+<div class="report-section" style="margin-bottom: 2rem; padding: 1.5rem; background-color: var(--card-bg-color); border-radius: var(--border-radius); box-shadow: var(--box-shadow);">
+    <h3>Summary Metrics</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+        <div><strong>Unique Sessions:</strong> {{ unique_sessions if unique_sessions != 'N/A' else 'Error loading' }}</div>
+        {# Display event counts #}
+        {% for event_type, count in event_counts.items() %}
+            <div><strong>{{ event_type | replace('_', ' ') | title }}:</strong> {{ count }}</div>
+        {% endfor %}
+        <div><strong>Total Activity Span:</strong> {{ total_duration if total_duration is not none else ('N/A' if total_duration == 'N/A' else 'No range') }}</div>
+        {# Can add more metrics here later #}
+    </div>
+</div>
+
+{# Section for Heatmap and Zones #}
+<div class="report-section" style="margin-bottom: 2rem; padding: 1.5rem; background-color: var(--card-bg-color); border-radius: var(--border-radius); box-shadow: var(--box-shadow);">
+    <h3>Heatmap & Clustered Zones</h3>
+    
+    {# Controls - restructured with Flexbox #}
+    <div class="report-controls-container" style="margin-bottom: 1rem; display: flex; flex-wrap: wrap; align-items: center; gap: 1rem;">
+        
+        {# Session Selector #}
+        <div class="form-group" style="margin-bottom: 0; display: flex; align-items: center; gap: 0.5rem;"> 
+             <label for="sessionSelector" style="margin-bottom: 0;">Session:</label>
+            <select id="sessionSelector" name="session_id" class="form-control form-control-sm" style="display: inline-block; width: auto; min-width: 250px;">
+                <option value="">All Sessions (Aggregated)</option>
+                {% for session in available_sessions %}
+                    <option value="{{ session }}">{{ session }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        {# Refresh Button (wrapped for alignment) #}
+         <div style="margin-bottom: 0;">
+            <button id="refreshReportBtn" class="btn btn-primary btn-sm">Refresh View</button>
+        </div>
+        
+        {# --- Combined Group for Right-Aligned Controls --- #}
+        <div style="display: flex; align-items: center; gap: 1rem;">
+
+            {# EPS Input Group #}
+            <div class="form-group" style="margin-bottom: 0; display: flex; align-items: center; gap: 0.25rem;">
+                <label for="dbscan_eps" style="margin-bottom: 0; font-size: 0.9em;">EPS:</label>
+                <input type="number" id="dbscan_eps" name="eps" value="{{ zone_data.parameters.eps if zone_data and zone_data.parameters else '0.3' }}" step="0.1" min="0.1" class="form-control form-control-sm" style="width: 80px;">
+            </div>
+
+            {# Min Samples Input Group #}
+            <div class="form-group" style="margin-bottom: 0; display: flex; align-items: center; gap: 0.25rem;">
+                 <label for="dbscan_min_samples" style="margin-bottom: 0; font-size: 0.9em;">Min Samples:</label>
+                <input type="number" id="dbscan_min_samples" name="min_samples" value="{{ zone_data.parameters.min_samples if zone_data and zone_data.parameters else '10' }}" step="1" min="1" class="form-control form-control-sm" style="width: 80px;">
+            </div>
+
+            {# Display Mode Radio Group #}
+            <div class="form-group" style="margin-bottom: 0; display: flex; align-items: center; gap: 0.5rem;"> 
+                <span style="font-weight: bold; font-size: 0.9em;">Display:</span>
+                <div style="display: flex; align-items: center; gap: 0.25rem;">
+                    <input type="radio" id="displayModeBoth" name="displayMode" value="both" checked style="margin: 0;">
+                    <label for="displayModeBoth" style="margin-bottom: 0; font-size: 0.9em; line-height: 1;">Both</label>
+                </div>
+                 <div style="display: flex; align-items: center; gap: 0.25rem;">
+                    <input type="radio" id="displayModeHeatmap" name="displayMode" value="heatmap" style="margin: 0;">
+                    <label for="displayModeHeatmap" style="margin-bottom: 0; font-size: 0.9em; line-height: 1;">Heatmap</label>
+                 </div>
+                 <div style="display: flex; align-items: center; gap: 0.25rem;">
+                    <input type="radio" id="displayModeZones" name="displayMode" value="zones" style="margin: 0;">
+                    <label for="displayModeZones" style="margin-bottom: 0; font-size: 0.9em; line-height: 1;">Zones</label>
+                </div>
+            </div>
+            
+        </div> {# --- End Combined Right Group --- #}
+
+    </div>
+    
+    {# Clustering Params Display Text (moved outside the flex container) #}
+    <p id="clusteringParamsDisplay" style="font-size: 0.9em; color: var(--text-muted-color); margin-top: 0.5rem;">
+         {% if zone_data and zone_data.parameters %}
+            Clustering Parameters: eps={{ zone_data.parameters.eps }}, min_samples={{ zone_data.parameters.min_samples }}
+        {% endif %}
+    </p>
+        
+    {# Heatmap and Zone Overlay Container #}
+    <div class="heatmap-zone-container" style="position: relative; max-width: 600px; margin-top: 10px; border: 1px solid #ccc; margin-left: auto; margin-right: auto;">
+        <div id="heatmapContainer" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"></div>
+        <div id="zoneOverlayContainer" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"></div>
+    </div>
+    <p id="heatmapErrorDisplay" style="color: red; margin-top: 5px; text-align: center;"></p>
+    <div id="zoneAnalysisResults" style="margin-top: 1rem;">
+        {# Zone summary table/text will go here via JS #}
+    </div>
+     {% if zone_data.error %}
+        <p class="alert alert-danger">Error during zone analysis: {{ zone_data.details or zone_data.error }}</p>
+    {% endif %}
+</div>
+
+{# Section for Zone Details Table (optional) #}
+<div class="report-section" style="margin-bottom: 2rem; padding: 1.5rem; background-color: var(--card-bg-color); border-radius: var(--border-radius); box-shadow: var(--box-shadow);">
+    <h3>Zone Details</h3>
+    <div id="zoneDetailsTableContainer">
+        {# Zone details table will be generated by JS #}
+    </div>
+</div>
+
+{# --- NEW: Recommendations Section --- #}
+<div class="report-section" style="margin-bottom: 2rem; padding: 1.5rem; background-color: var(--card-bg-color); border-radius: var(--border-radius); box-shadow: var(--box-shadow);">
+    <h3>Recommendations</h3>
+    {% if recommendations %}
+        {# Add ID to the list for JS targeting #}
+        <ul id="recommendationsList" style="list-style-type: disc; margin-left: 20px;">
+            {% for rec in recommendations %}
+                <li>{{ rec }}</li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>No recommendations available.</p>
+    {% endif %}
+</div>
+{# --- End Recommendations Section --- #}
+
+{% endblock %}
+
+{% block scripts_extra %}
+{{ super() }}
+<script src="https://cdn.jsdelivr.net/npm/heatmap.js@2.0.2/heatmap.min.js"></script>
+<script>
+    // Pass data from Flask template to JavaScript
+    const levelId = {{ level_id | tojson }};
+    const initialZoneData = {{ zone_data | tojson }};
+
+document.addEventListener('DOMContentLoaded', function() {
+    
+    const heatmapContainer = document.getElementById('heatmapContainer');
+    const zoneOverlayContainer = document.getElementById('zoneOverlayContainer');
+    const heatmapErrorDisplay = document.getElementById('heatmapErrorDisplay');
+    const zoneAnalysisResults = document.getElementById('zoneAnalysisResults');
+    const zoneDetailsTableContainer = document.getElementById('zoneDetailsTableContainer');
+    let heatmapInstance = null;
+    
+    // --- NEW: Session selector and Refresh Button ---
+    const sessionSelector = document.getElementById('sessionSelector');
+    const refreshReportBtn = document.getElementById('refreshReportBtn');
+    
+    // --- Heatmap Config --- (Same as before)
+    const heatmapGradient = { '.1': 'blue', '.2': 'cyan', '.4': 'lime', '.7': 'yellow', '1': 'red' };
+    const heatmapConfig = { container: heatmapContainer, radius: 20, maxOpacity: .6, minOpacity: 0, blur: .75, gradient: heatmapGradient };
+    
+    // --- Helper Functions (Same as before) ---
+    function clearVisualizations() {
+        heatmapErrorDisplay.textContent = '';
+        zoneOverlayContainer.innerHTML = ''; 
+        zoneAnalysisResults.innerHTML = '';
+        zoneDetailsTableContainer.innerHTML = '';
+        if (heatmapInstance) {
+             try { heatmapInstance.setData({ max: 0, data: [] }); } catch(e) {}
+        }
+    }
+
+    function scaleZoneCoordinates(x, z, scaling) { // Same as dashboard
+         if (!scaling) return { x: 0, y: 0 }; 
+        const scaledX = scaling.offset_x + (x - scaling.min_x) * scaling.scale;
+        const scaledY = scaling.offset_y + (z - scaling.min_z) * scaling.scale;
+        return { x: parseInt(scaledX), y: parseInt(scaledY) };
+    }
+
+    function drawZones(zones, scaling) { // Same as dashboard
+        zoneOverlayContainer.innerHTML = ''; // Clear before drawing
+        zoneAnalysisResults.innerHTML = '';
+        zoneDetailsTableContainer.innerHTML = ''; // Clear table too
+        if (!zones || zones.length === 0 || !scaling) return;
+
+        // --- Sort zones by cluster_id before generating table ---
+        zones.sort((a, b) => {
+            const idA = typeof a.cluster_id === 'number' ? a.cluster_id : Infinity;
+            const idB = typeof b.cluster_id === 'number' ? b.cluster_id : Infinity;
+            return idA - idB;
+        });
+        // ------------------------------------------------------
+
+        let summaryHtml = '<h4>Zone Analysis Summary:</h4><ul>';
+        let popularCount = 0, moderateCount = 0, unpopularCount = 0;
+        
+        let tableHtml = `<table class="table table-sm table-striped" style="font-size: 0.9em;">
+                            <thead><tr><th>ID</th><th>Popularity</th><th>Size</th><th>Center X</th><th>Center Z</th></tr></thead><tbody>`;
+
+        const ns = "http://www.w3.org/2000/svg";
+        const svg = document.createElementNS(ns, "svg");
+        svg.setAttribute('width', '100%'); svg.setAttribute('height', '100%');
+        svg.style.position = 'absolute';
+
+        zones.forEach(zone => {
+            const pos = scaleZoneCoordinates(zone.centroid_x, zone.centroid_z, scaling);
+            const radius = Math.max(3, Math.sqrt(zone.size) * 1.5);
+            let color = 'grey';
+            let opacity = 0.4;
+            let popText = zone.popularity || 'N/A';
+            
+            if (zone.popularity === 'popular') { color = 'rgba(0, 255, 0, 0.6)'; popularCount++; }
+            else if (zone.popularity === 'unpopular') { color = 'rgba(255, 0, 0, 0.6)'; unpopularCount++; }
+            else if (zone.popularity === 'moderate') { color = 'rgba(255, 165, 0, 0.6)'; moderateCount++; }
+
+            // Draw circle on overlay
+            const circle = document.createElementNS(ns, "circle");
+            circle.setAttribute('cx', pos.x); circle.setAttribute('cy', pos.y); circle.setAttribute('r', radius);
+            circle.setAttribute('fill', color); circle.setAttribute('fill-opacity', opacity);
+            const title = document.createElementNS(ns, "title");
+            title.textContent = `Zone ${zone.cluster_id}: Size=${zone.size}, Pop=${popText}`;
+            circle.appendChild(title);
+            svg.appendChild(circle);
+            
+            // Add row to details table
+            tableHtml += `<tr>
+                            <td>${zone.cluster_id !== undefined ? zone.cluster_id : 'N/A'}</td>
+                            <td><span style="color: ${color.replace('rgba','rgb').replace(', 0.6','')};">${popText.charAt(0).toUpperCase() + popText.slice(1)}</span></td>
+                            <td>${zone.size}</td>
+                            <td>${zone.centroid_x.toFixed(2)}</td>
+                            <td>${zone.centroid_z.toFixed(2)}</td>
+                          </tr>`;
+        });
+
+        zoneOverlayContainer.appendChild(svg);
+        
+        // Add summary text
+        summaryHtml += `<li>Popular Zones (Green): ${popularCount}</li>`;
+        summaryHtml += `<li>Moderate Zones (Orange): ${moderateCount}</li>`;
+        summaryHtml += `<li>Unpopular Zones (Red): ${unpopularCount}</li>`;
+        if(initialZoneData.noise_points !== undefined){
+             summaryHtml += `<li>Noise Points (Not in Zones): ${initialZoneData.noise_points}</li>`;
+        }
+        summaryHtml += `</ul>`;
+        zoneAnalysisResults.innerHTML = summaryHtml;
+        
+        // Add details table
+        tableHtml += `</tbody></table>`;
+        zoneDetailsTableContainer.innerHTML = tableHtml;
+    }
+    
+    // --- Heatmap Generation Function (takes session ID) ---
+    function generateHeatmap(levelId, sessionId) {
+        clearVisualizations();
+        heatmapErrorDisplay.textContent = ''; 
+        if (!levelId) return;
+
+        let apiUrl = `/api/heatmap?level_id=${encodeURIComponent(levelId)}`;
+        if (sessionId) {
+             apiUrl += `&session_id=${encodeURIComponent(sessionId)}`;
+        }
+
+        console.log('Fetching heatmap data from:', apiUrl);
+        fetch(apiUrl)
+            .then(response => {
+                if (!response.ok) { return response.json().then(err => { throw new Error(err.error || `HTTP error! status: ${response.status}`) }).catch(() => {throw new Error(`HTTP error! status: ${response.status}`);}); }
+                return response.json();
+            })
+            .then(data => {
+                if (!heatmapContainer) return;
+                if (!data.points || data.points.length === 0) {
+                     heatmapErrorDisplay.textContent = 'No position data found for heatmap.';
+                     return;
+                }
+                const heatmapData = { max: 1, data: data.points };
+                if (!heatmapInstance) { heatmapInstance = h337.create(heatmapConfig); }
+                heatmapInstance.setData(heatmapData);
+                console.log('Heatmap data set successfully.');
+            })
+            .catch(error => {
+                console.error('Error fetching heatmap data:', error);
+                heatmapErrorDisplay.textContent = `Heatmap Error: ${error.message}`;
+            });
+    }
+
+    // --- Zone Analysis Function (takes session ID) ---
+    function analyzeZones(levelId, sessionId) {
+        clearVisualizations();
+        heatmapErrorDisplay.textContent = ''; 
+
+        if (!levelId) {
+            heatmapErrorDisplay.textContent = 'Level ID is required for zone analysis.'; 
+            return;
+        }
+
+        // Read DBSCAN params from inputs (NOW ALWAYS READ)
+        const eps = document.getElementById('dbscan_eps').value;
+        const minSamples = document.getElementById('dbscan_min_samples').value;
+
+        zoneAnalysisResults.innerHTML = '<p><em>Analyzing zones...</em></p>';
+
+        // Construct API URL
+        let apiUrl = `/api/zones?level_id=${encodeURIComponent(levelId)}`;
+        if (sessionId) {
+            apiUrl += `&session_id=${encodeURIComponent(sessionId)}`;
+        }
+        if (eps) { apiUrl += `&eps=${encodeURIComponent(eps)}`; }
+        if (minSamples) { apiUrl += `&min_samples=${encodeURIComponent(minSamples)}`; }
+
+        console.log('Fetching zone data from:', apiUrl);
+
+        fetch(apiUrl)
+            .then(response => {
+                if (!response.ok) { return response.json().then(err => { throw new Error(err.error || err.message || `HTTP error! status: ${response.status}`) }).catch(() => {throw new Error(`HTTP error! status: ${response.status}`);}); }
+                return response.json();
+            })
+            .then(data => {
+                console.log('Zone analysis results:', data);
+                zoneAnalysisResults.innerHTML = ''; 
+
+                // Update the clustering parameters display text
+                const paramsDisplay = document.getElementById('clusteringParamsDisplay');
+                if (paramsDisplay) {
+                    paramsDisplay.textContent = `Clustering Parameters: eps=${eps}, min_samples=${minSamples}`;
+                }
+
+                // --- Update Recommendations List --- 
+                const recommendationsList = document.getElementById('recommendationsList');
+                if (recommendationsList) {
+                    recommendationsList.innerHTML = ''; // Clear existing recommendations
+                    if (data.recommendations && data.recommendations.length > 0) {
+                        data.recommendations.forEach(rec => {
+                            const li = document.createElement('li');
+                            li.textContent = rec;
+                            recommendationsList.appendChild(li);
+                        });
+                    } else {
+                        // Display default message if no recommendations returned
+                        const li = document.createElement('li');
+                        li.textContent = "На данный момент автоматических рекомендаций по улучшению уровня не сформировано.";
+                         recommendationsList.appendChild(li);
+                    }
+                }
+                // ------------------------------------
+
+                if(data.message) { 
+                     zoneAnalysisResults.innerHTML += `<p><em>${data.message}</em></p>`;
+                 }
+                if (data.zones && data.scaling) {
+                     drawZones(data.zones, data.scaling);
+                 } else if (!data.message){
+                     zoneAnalysisResults.innerHTML += `<p><em>No zones found.</em></p>`;
+                 }
+                 if(data.noise_points !== undefined){
+                     zoneAnalysisResults.innerHTML += `<p><em>Noise Points: ${data.noise_points}</em></p>`;
+                 }
+            })
+            .catch(error => {
+                console.error('Error fetching/processing zone data:', error);
+                zoneAnalysisResults.innerHTML = '';
+                heatmapErrorDisplay.textContent = `Zone Analysis Error: ${error.message}`;
+            });
+    }
+
+    // --- Event Listener for Refresh Button ---
+    refreshReportBtn.addEventListener('click', function() {
+        const selectedSessionId = sessionSelector.value;
+        const displayMode = document.querySelector('input[name="displayMode"]:checked').value;
+        
+        clearVisualizations(); // Clear everything first
+
+        // Conditionally generate heatmap
+        if (displayMode === 'both' || displayMode === 'heatmap') {
+            generateHeatmap(levelId, selectedSessionId); 
+        }
+
+        // Conditionally analyze zones
+        if (displayMode === 'both' || displayMode === 'zones') {
+            analyzeZones(levelId, selectedSessionId); 
+        }
+    });
+
+    // --- Initial Load --- 
+    // Trigger initial load based on default checked state ('both')
+    const initialDisplayMode = document.querySelector('input[name="displayMode"]:checked').value;
+    if (initialDisplayMode === 'both' || initialDisplayMode === 'heatmap') {
+        generateHeatmap(levelId, null); // Initial heatmap for all sessions
+    }
+    if (initialDisplayMode === 'both' || initialDisplayMode === 'zones') {
+        // Use initial zone data if available, otherwise analyze
+        if (initialZoneData && initialZoneData.zones && initialZoneData.scaling) {
+            drawZones(initialZoneData.zones, initialZoneData.scaling);
+            // Update initial parameters display if needed
+             const paramsDisplay = document.getElementById('clusteringParamsDisplay');
+             if (paramsDisplay && initialZoneData.parameters) {
+                 paramsDisplay.textContent = `Clustering Parameters: eps=${initialZoneData.parameters.eps}, min_samples=${initialZoneData.parameters.min_samples}`;
+             }
+        } else {
+            // Optionally trigger a full analysis if no initial data
+             analyzeZones(levelId, null); 
+        } 
+    }
+
+});
+</script>
+{% endblock scripts_extra %} 

@@ -1,0 +1,384 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard - GameFlow Analytics{% endblock %}
+
+{% block content %}
+<h2>Dashboard</h2>
+<p>Welcome, {{ current_user.username }}!</p>
+
+{# Add permission checks if needed #}
+{# {% if current_user.has_role('Analyst') or current_user.has_role('Administrator') %} #}
+
+<div class="dashboard-container" style="margin-top: 2rem;">
+    <p style="color: var(--text-muted-color);">Analytics reports, charts, and data visualizations will appear here.</p>
+    
+    {# Example placeholders for sections mentioned in TZ #}
+    <div class="dashboard-section" style="margin-top: 1.5rem; padding: 1.5rem; background-color: var(--card-bg-color); border-radius: var(--border-radius); box-shadow: var(--box-shadow);">
+        <h3>Key Metrics Overview</h3>
+        <p>...</p>
+    </div>
+
+    <div class="dashboard-section" style="margin-top: 1.5rem; padding: 1.5rem; background-color: var(--card-bg-color); border-radius: var(--border-radius); box-shadow: var(--box-shadow);">
+        <h3>Session Analysis</h3>
+        <p>...</p>
+    </div>
+
+    <div class="dashboard-section" style="margin-top: 1.5rem; padding: 1.5rem; background-color: var(--card-bg-color); border-radius: var(--border-radius); box-shadow: var(--box-shadow);">
+        <h3>Level Performance</h3>
+        {# Heatmap goes here #}
+        <h4>Player Position Heatmap & Zones</h4>
+        <div>
+            <!-- Фильтры для Heatmap/Zones -->
+            <label for="level_id_input">Level ID:</label>
+            <input type="text" id="level_id_input" name="level_id" value="DefaultLevel" required style="margin-right: 1rem;">
+            <label for="session_id_input">Session ID (Optional):</label>
+            <input type="text" id="session_id_input" name="session_id" style="margin-right: 1rem;">
+            <button id="generateHeatmapBtn" class="btn btn-primary btn-sm">Generate Heatmap</button>
+        </div>
+
+        <!-- Контролы и результаты для зон -->
+        <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-color);">
+            <label for="dbscan_eps">DBSCAN Eps:</label>
+            <input type="number" step="0.05" id="dbscan_eps" name="eps" value="0.3" style="width: 60px; margin-right: 1rem;">
+            <label for="dbscan_min_samples">Min Samples:</label>
+            <input type="number" step="1" id="dbscan_min_samples" name="min_samples" value="10" style="width: 60px; margin-right: 1rem;">
+            <button id="analyzeZonesBtn" class="btn btn-secondary btn-sm">Analyze Zones</button>
+            <span id="zoneAnalysisStatus" style="margin-left: 1rem; font-style: italic; color: var(--text-muted-color);"></span>
+        </div>
+
+        <!-- Контейнер для Heatmap и зон -->
+        <div style="position: relative; width: 600px; height: 400px; margin-top: 10px; border: 1px solid #ccc;">
+            <div id="heatmapContainer" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;">
+                {# Heatmap will be rendered here by heatmap.js #}
+            </div>
+            <div id="zoneOverlayContainer" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;">
+                {# Zones will be drawn here as SVG circles or similar #}
+            </div>
+        </div>
+        <p id="heatmapErrorDisplay" style="color: red; margin-top: 5px;"></p> {# Renamed ID #}
+        <div id="zoneAnalysisResults" style="margin-top: 1rem;">
+            {# Сводка по зонам будет здесь #}
+        </div>
+    </div>
+
+    {# Add filtering controls here eventually #}
+
+</div>
+
+{# {% else %} #}
+{# <p class="alert alert-warning">You do not have permission to view the dashboard.</p> #}
+{# {% endif %} #}
+
+{% endblock %}
+
+{% block scripts_extra %}
+{{ super() }} {# Include scripts from base.html if any #}
+<script src="https://cdn.jsdelivr.net/npm/heatmap.js@2.0.2/heatmap.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM fully loaded and parsed');
+
+    const generateBtn = document.getElementById('generateHeatmapBtn');
+    const levelIdInput = document.getElementById('level_id_input');
+    const sessionIdInput = document.getElementById('session_id_input');
+    const heatmapContainer = document.getElementById('heatmapContainer');
+    const heatmapErrorDisplay = document.getElementById('heatmapErrorDisplay'); // Use renamed ID
+    let heatmapInstance = null; // Keep track of the heatmap instance
+
+    // --- Новые элементы для зон ---
+    const analyzeZonesBtn = document.getElementById('analyzeZonesBtn');
+    // levelIdInput and sessionIdInput already defined above
+    const epsInput = document.getElementById('dbscan_eps');
+    const minSamplesInput = document.getElementById('dbscan_min_samples');
+    const zoneAnalysisStatus = document.getElementById('zoneAnalysisStatus');
+    const zoneOverlayContainer = document.getElementById('zoneOverlayContainer');
+    const zoneAnalysisResults = document.getElementById('zoneAnalysisResults');
+    let currentZoneScaling = null; // Store scaling params from last analysis
+
+    // Check if elements were found
+    if (!generateBtn) console.error('Button #generateHeatmapBtn not found!');
+    if (!levelIdInput) console.error('Input #level_id_input not found!');
+    if (!sessionIdInput) console.error('Input #session_id_input not found!');
+    if (!heatmapContainer) console.error('Div #heatmapContainer not found!');
+    if (!heatmapErrorDisplay) console.error('P #heatmapErrorDisplay not found!');
+
+    // Basic configuration for heatmap.js
+    const config = {
+        container: heatmapContainer,
+        radius: 20,
+        maxOpacity: .6,
+        minOpacity: 0,
+        blur: .75,
+        // Gradient colors might need adjustment based on desired look
+        gradient: {
+          '.1': 'blue',
+          '.2': 'cyan',
+          '.4': 'lime',
+          '.7': 'yellow',
+          '1': 'red'
+        }
+    };
+
+    // --- Функция для очистки зон --- 
+    function clearZoneOverlay() {
+        zoneOverlayContainer.innerHTML = ''; // Clear previous drawings
+        zoneAnalysisResults.innerHTML = ''; // Clear summary
+        zoneAnalysisStatus.textContent = '';
+        currentZoneScaling = null;
+    }
+
+    // --- Функция для масштабирования координат зоны --- 
+    function scaleZoneCoordinates(x, z, scaling) {
+        if (!scaling) return { x: 0, y: 0 }; // Return origin if no scaling info
+        const scaledX = scaling.offset_x + (x - scaling.min_x) * scaling.scale;
+        const scaledY = scaling.offset_y + (z - scaling.min_z) * scaling.scale; // Use Z for Y axis
+        return { x: parseInt(scaledX), y: parseInt(scaledY) };
+    }
+
+     // --- Функция для рисования зон (SVG) --- 
+     function drawZones(zones, scaling) {
+        clearZoneOverlay(); // Ensure clean slate before drawing
+        if (!zones || zones.length === 0 || !scaling) return;
+
+        let summaryHtml = '<h4>Zone Analysis Summary:</h4><ul>';
+        let popularCount = 0;
+        let moderateCount = 0;
+        let unpopularCount = 0;
+
+        const ns = "http://www.w3.org/2000/svg";
+        const svg = document.createElementNS(ns, "svg");
+        svg.setAttribute('width', '100%');
+        svg.setAttribute('height', '100%');
+        svg.style.position = 'absolute'; // Ensure it overlays correctly
+
+        zones.forEach(zone => {
+            const pos = scaleZoneCoordinates(zone.centroid_x, zone.centroid_z, scaling);
+            // Simple radius calculation, adjust multiplier as needed
+            const radius = Math.max(3, Math.sqrt(zone.size) * 1.5); 
+            let color = 'grey'; // Default for unexpected
+            let opacity = 0.4;
+
+            if (zone.popularity === 'popular') {
+                color = 'rgba(0, 255, 0, 0.6)'; // Green
+                popularCount++;
+            } else if (zone.popularity === 'unpopular') {
+                color = 'rgba(255, 0, 0, 0.6)'; // Red
+                unpopularCount++;
+            } else if (zone.popularity === 'moderate') {
+                color = 'rgba(255, 165, 0, 0.6)'; // Orange
+                moderateCount++;
+            }
+
+            const circle = document.createElementNS(ns, "circle");
+            circle.setAttribute('cx', pos.x);
+            circle.setAttribute('cy', pos.y);
+            circle.setAttribute('r', radius);
+            circle.setAttribute('fill', color);
+            // circle.setAttribute('stroke', 'black'); // Optional border
+            // circle.setAttribute('stroke-width', '1');
+             circle.setAttribute('fill-opacity', opacity);
+
+            const title = document.createElementNS(ns, "title"); // Tooltip
+             title.textContent = `Zone ${zone.cluster_id}: Size=${zone.size}, Pop=${zone.popularity}`;
+            circle.appendChild(title);
+
+            svg.appendChild(circle);
+        });
+
+        zoneOverlayContainer.appendChild(svg);
+
+        summaryHtml += `<li>Popular Zones (Green): ${popularCount}</li>`;
+        summaryHtml += `<li>Moderate Zones (Orange): ${moderateCount}</li>`;
+        summaryHtml += `<li>Unpopular Zones (Red): ${unpopularCount}</li>`;
+        // Optionally display noise points count if needed from the response
+        // summaryHtml += `<li>Noise Points (Not in Zones): ${noisePointsCount}</li>`; 
+        summaryHtml += `</ul>`;
+        zoneAnalysisResults.innerHTML = summaryHtml;
+    }
+
+    // --- Heatmap Generation Function (modified) --- 
+    function generateHeatmap() {
+        clearZoneOverlay(); // Clear zones when generating new heatmap
+        const levelId = levelIdInput.value.trim();
+        const sessionId = sessionIdInput.value.trim();
+        heatmapErrorDisplay.textContent = ''; // Clear previous errors
+
+        if (!levelId) {
+            heatmapErrorDisplay.textContent = 'Level ID is required.';
+            return;
+        }
+
+        // Construct the API URL
+        let apiUrl = `/api/heatmap?level_id=${encodeURIComponent(levelId)}`;
+        if (sessionId) {
+            apiUrl += `&session_id=${encodeURIComponent(sessionId)}`;
+        }
+
+        console.log('Attempting to fetch heatmap data from:', apiUrl);
+
+        fetch(apiUrl)
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(err => {
+                         throw new Error(err.error || `HTTP error! status: ${response.status}`)
+                    }).catch(() => {
+                         throw new Error(`HTTP error! status: ${response.status}`);
+                    });
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('Received heatmap data:', data);
+
+                if (!heatmapContainer) {
+                     console.error('Heatmap container not found when trying to render!');
+                     heatmapErrorDisplay.textContent = 'Error: Heatmap container is missing.';
+                     return;
+                }
+
+                if (!data.points || data.points.length === 0) {
+                     heatmapErrorDisplay.textContent = 'No position data found for the given criteria.';
+                     console.log('No position data found for heatmap.');
+                     if (heatmapInstance) {
+                         heatmapInstance.setData({ max: 0, data: [] });
+                         console.log('Cleared existing heatmap.');
+                     }
+                     return;
+                }
+
+                const maxVal = 1; // Using 1 based on previous findings
+                console.log('Using maxVal for heatmap:', maxVal);
+
+                const heatmapData = {
+                    max: maxVal,
+                    data: data.points // API already returns points in the correct {x, y, value} format
+                };
+
+                if (!heatmapInstance) {
+                    if (typeof h337 !== 'undefined') {
+                        try {
+                             heatmapInstance = h337.create(config);
+                             console.log('Heatmap instance created.');
+                        } catch (e) {
+                            console.error('Error creating heatmap instance:', e);
+                            heatmapErrorDisplay.textContent = 'Error initializing heatmap library.';
+                            return;
+                        }
+                    } else {
+                        console.error('heatmap.js (h337) library not loaded!');
+                        heatmapErrorDisplay.textContent = 'Error: Heatmap library failed to load.';
+                        return;
+                    }
+                }
+                try {
+                    heatmapInstance.setData(heatmapData);
+                    console.log('Heatmap data set successfully.');
+                } catch(e) {
+                     console.error('Error setting heatmap data:', e);
+                     heatmapErrorDisplay.textContent = 'Error rendering heatmap data.';
+                }
+            })
+            .catch(error => {
+                clearZoneOverlay(); // Clear zones on heatmap error too
+                console.error('Error fetching or processing heatmap data:', error);
+                if (heatmapErrorDisplay){
+                    heatmapErrorDisplay.textContent = `Heatmap Error: ${error.message}`;
+                }
+                if (heatmapInstance) {
+                    try {
+                        heatmapInstance.setData({ max: 0, data: [] });
+                        console.log('Cleared heatmap due to error.');
+                    } catch (e) {
+                        console.error('Error clearing heatmap data on error:', e);
+                    }
+                }
+            });
+    }
+
+    // --- Обработчик кнопки Analyze Zones --- 
+    analyzeZonesBtn.addEventListener('click', () => {
+        const levelId = levelIdInput.value.trim();
+        const sessionId = sessionIdInput.value.trim();
+        const eps = epsInput.value;
+        const minSamples = minSamplesInput.value;
+
+        clearZoneOverlay(); // Clear previous results first
+        heatmapErrorDisplay.textContent = ''; // Clear heatmap errors too
+
+        if (!levelId) {
+            // Use heatmap error display for consistency
+            heatmapErrorDisplay.textContent = 'Level ID is required for zone analysis.'; 
+            return;
+        }
+
+        zoneAnalysisStatus.textContent = 'Analyzing zones...';
+
+        // Construct API URL
+        let apiUrl = `/api/zones?level_id=${encodeURIComponent(levelId)}`;
+        if (sessionId) {
+            apiUrl += `&session_id=${encodeURIComponent(sessionId)}`;
+        }
+        // Append DBSCAN params if they have values
+        if (eps) {
+             apiUrl += `&eps=${encodeURIComponent(eps)}`;
+        }
+         if (minSamples) {
+            apiUrl += `&min_samples=${encodeURIComponent(minSamples)}`;
+        }
+
+        console.log('Fetching zone data from:', apiUrl);
+
+        fetch(apiUrl)
+            .then(response => {
+                 if (!response.ok) {
+                     // Try to get error from JSON response body
+                     return response.json().then(err => { 
+                         throw new Error(err.error || err.message || `HTTP error! status: ${response.status}`)
+                     }).catch(() => {
+                          // If parsing fails or no error message, throw generic error
+                          throw new Error(`HTTP error! status: ${response.status}`);
+                     });
+                 }
+                return response.json();
+            })
+            .then(data => {
+                console.log('Zone analysis results:', data);
+                 zoneAnalysisStatus.textContent = 'Analysis complete.';
+
+                 if(data.message) { // Handle messages like "Not enough data"
+                     zoneAnalysisResults.innerHTML = `<p><em>${data.message}</em></p>`;
+                 }
+
+                 if (data.zones && data.scaling) {
+                     currentZoneScaling = data.scaling; // Save scaling info
+                     drawZones(data.zones, data.scaling);
+                 } else if (!data.message){ // If no zones and no message, show default
+                     zoneAnalysisResults.innerHTML = `<p><em>No zones found.</em></p>`;
+                 }
+
+                 // Optionally display noise points count
+                 if(data.noise_points !== undefined){
+                     const noiseP = document.createElement('p');
+                     noiseP.innerHTML = `<em>Points not belonging to any zone (noise): ${data.noise_points}</em>`;
+                     zoneAnalysisResults.appendChild(noiseP);
+                 }
+
+
+            })
+            .catch(error => {
+                console.error('Error fetching or processing zone data:', error);
+                heatmapErrorDisplay.textContent = `Zone Analysis Error: ${error.message}`;
+                 zoneAnalysisStatus.textContent = 'Analysis failed.';
+            });
+
+    });
+
+    // Attach heatmap generation function to its button
+    if(generateBtn) {
+         generateBtn.addEventListener('click', generateHeatmap);
+    }
+
+});
+console.log('Script block finished execution.');
+</script>
+{% endblock scripts_extra %} 

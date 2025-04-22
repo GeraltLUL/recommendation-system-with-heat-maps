@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+
+{% block title %}Select Level Report - GameFlow Analytics{% endblock %}
+
+{% block content %}
+<h2>Select Level for Report</h2>
+
+<div class="report-section" style="margin-bottom: 2rem; padding: 1.5rem; background-color: var(--card-bg-color); border-radius: var(--border-radius); box-shadow: var(--box-shadow);">
+    {% if levels %}
+        <div class="form-group">
+            <label for="levelSelector">Available Levels:</label>
+            <select id="levelSelector" name="level_id" class="form-control" style="max-width: 400px;">
+                {% for level in levels %}
+                    <option value="{{ level }}">{{ level }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button id="viewReportBtn" class="btn btn-primary" style="margin-top: 1rem;">View Report</button>
+    {% else %}
+        <p class="alert alert-warning">No levels with data found or could not load levels.</p>
+    {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts_extra %}
+{{ super() }}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const levelSelector = document.getElementById('levelSelector');
+    const viewReportBtn = document.getElementById('viewReportBtn');
+
+    if (viewReportBtn && levelSelector) {
+        viewReportBtn.addEventListener('click', () => {
+            const selectedLevel = levelSelector.value;
+            if (selectedLevel) {
+                // Construct the URL for the specific level report
+                const reportUrl = `{{ url_for('reports.level_report', level_id='__LEVEL_ID__') }}`.replace('__LEVEL_ID__', encodeURIComponent(selectedLevel));
+                window.location.href = reportUrl; // Redirect to the report page
+            } else {
+                alert('Please select a level.');
+            }
+        });
+    }
+});
+</script>
+{% endblock scripts_extra %} 

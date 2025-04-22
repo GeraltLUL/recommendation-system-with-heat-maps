@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}GameFlow Analytics{% endblock %}</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700&display=swap">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block head_extra %}{% endblock %}
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <a href="{{ url_for('main.index') }}" class="navbar-brand">GameFlow Analytics</a>
+            {# --- Hamburger Button (hidden on desktop) --- #}
+            <button class="navbar-toggler" type="button" aria-controls="navbarLinks" aria-expanded="false" aria-label="Toggle navigation">
+                <span>☰</span> {# Simple hamburger icon #}
+            </button>
+            {# --- End Hamburger --- #}
+            <div class="navbar-links" id="navbarLinks"> {# Added ID #}
+                {% if current_user.is_authenticated %}
+                    {# Show Users link only to Administrator #}
+                    {% if current_user.has_role('Administrator') %}
+                         <a href="{{ url_for('admin.user_management') }}">Users</a> {# Placeholder #}
+                    {% endif %}
+                     {# Show Database link to Admin or Analyst #}
+                    {% if current_user.has_role('Administrator') or current_user.has_role('Analyst') %}
+                         <a href="{{ url_for('db_viewer.view_sessions') }}">Database</a> {# Link to session list #}
+                         <a href="{{ url_for('reports.select_level_report') }}">Level Reports</a> {# NEW LINK to selection page #}
+                    {% endif %}
+                     <a href="{{ url_for('main.dashboard') }}">Dashboard</a>
+                     <a href="{{ url_for('auth.logout') }}">Logout ({{ current_user.username }})</a> {# Placeholder #}
+                {% else %}
+                    <a href="{{ url_for('auth.login') }}">Login</a> {# Placeholder #}
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <main class="container content">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flashes">
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}
+        {% endblock %}
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            {# <p>&copy; 2025 GameFlow Analytics. All rights reserved.</p> <-- REMOVED #}
+            <p>GameFlow Analytics 2025</p>
+        </div>
+    </footer>
+
+    {# Optional: Include global JS files if needed #}
+    {# <script src="{{ url_for('static', filename='js/main.js') }}"></script> #}
+    
+    {# Navbar Toggler Script #}
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const toggler = document.querySelector('.navbar-toggler');
+        const links = document.getElementById('navbarLinks');
+
+        if (toggler && links) {
+            toggler.addEventListener('click', function() {
+                links.classList.toggle('active');
+                // Update aria-expanded attribute for accessibility
+                const isExpanded = links.classList.contains('active');
+                toggler.setAttribute('aria-expanded', isExpanded);
+            });
+        }
+    });
+    </script>
+    
+    {% block scripts_extra %}{% endblock %}
+
+</body>
+</html> 

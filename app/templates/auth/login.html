@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+
+{% block title %}Login - GameFlow Analytics{% endblock %}
+
+{% block content %}
+<div style="max-width: 400px; margin: 2rem auto; padding: 2rem; background-color: var(--card-bg-color); border-radius: var(--border-radius); box-shadow: var(--box-shadow);">
+    <h2 class="text-center mb-4">Login</h2>
+    <form method="POST" action="{{ url_for('auth.login') }}">
+        {# Add CSRF token if using Flask-WTF #}
+        {# {{ form.csrf_token }} #}
+        <div class="form-group">
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" class="form-control" required>
+        </div>
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" class="form-control" required>
+        </div>
+        <div class="form-group" style="display: flex; align-items: center;">
+            <input type="checkbox" id="remember" name="remember" style="margin-right: 0.5rem;">
+            <label for="remember" style="margin-bottom: 0; font-weight: normal;">Remember Me</label>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width: 100%;">Login</button>
+    </form>
+    {# Add link to registration or password reset if needed #}
+    {# <p class="text-center mt-3">Don't have an account? <a href="{{ url_for('auth.register') }}">Sign Up</a></p> #}
+</div>
+{% endblock %} 

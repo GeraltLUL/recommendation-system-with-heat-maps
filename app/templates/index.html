@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+
+{% block title %}Welcome - GameFlow Analytics{% endblock %}
+
+{% block content %}
+<div class="text-center" style="padding: 2rem 0;">
+    <h1 style="font-weight: 700; margin-bottom: 0.5rem;">GameFlow Analytics</h1>
+    <p class="lead" style="color: var(--text-muted-color); max-width: 700px; margin: 0 auto 2rem auto;">
+        Комплексная система анализа игровых данных для оптимизации геймдизайна. 
+        Выявляйте закономерности в поведении игроков и улучшайте пользовательский опыт.
+    </p>
+
+    {% if not current_user.is_authenticated %}
+        {# --- Guest View --- #}
+        <div class="guest-cta" style="margin-bottom: 3rem;">
+             <p style="font-size: 1.1rem;">Пожалуйста, <a href="{{ url_for('auth.login') }}" style="font-weight: 500;">войдите</a>, чтобы получить доступ к инструментам анализа.</p>
+        </div>
+        
+        <div class="feature-overview" >
+            <h2 style="margin-bottom: 1.5rem; font-weight: 500; color: var(--text-muted-color);">Примеры возможностей системы:</h2>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; text-align: left;">
+                
+                <div class="feature-card" style="background-color: var(--card-bg-color); padding: 1.5rem; border-radius: var(--border-radius); box-shadow: var(--box-shadow);">
+                    <h3 style="margin-bottom: 0.75rem; font-size: 1.1rem;">Тепловые карты</h3>
+                    <p style="color: var(--text-muted-color); font-size: 0.95rem;">Визуализируйте активность игроков на игровых уровнях для выявления "горячих" и "холодных" зон, проблемных мест и популярных маршрутов.</p>
+                    {# Placeholder for heatmap image/svg could go here #}
+                    <div style="height: 100px; background-color: #e9ecef; margin-top: 1rem; border-radius: var(--border-radius); display:flex; align-items:center; justify-content:center; font-size: 0.8rem; color: var(--text-muted-color); user-select: none;">[ Heatmap Example ]</div>
+                </div>
+                
+                <div class="feature-card" style="background-color: var(--card-bg-color); padding: 1.5rem; border-radius: var(--border-radius); box-shadow: var(--box-shadow);">
+                    <h3 style="margin-bottom: 0.75rem; font-size: 1.1rem;">Кластеризация игроков</h3>
+                     <p style="color: var(--text-muted-color); font-size: 0.95rem;">Автоматически группируйте игроков по схожим паттернам поведения (стиль игры, предпочтения) для лучшего понимания аудитории.</p>
+                     <div style="height: 100px; background-color: #e9ecef; margin-top: 1rem; border-radius: var(--border-radius); display:flex; align-items:center; justify-content:center; font-size: 0.8rem; color: var(--text-muted-color); user-select: none;">[ Player Clusters ]</div>
+                </div>
+                
+                 <div class="feature-card" style="background-color: var(--card-bg-color); padding: 1.5rem; border-radius: var(--border-radius); box-shadow: var(--box-shadow);">
+                    <h3 style="margin-bottom: 0.75rem; font-size: 1.1rem;">Аналитические отчеты</h3>
+                     <p style="color: var(--text-muted-color); font-size: 0.95rem;">Формируйте детальные отчеты по ключевым метрикам: удержание (retention), вовлеченность, прохождение уровней, использование механик.</p>
+                     <div style="height: 100px; background-color: #e9ecef; margin-top: 1rem; border-radius: var(--border-radius); display:flex; align-items:center; justify-content:center; font-size: 0.8rem; color: var(--text-muted-color); user-select: none;">[ Report Example ]</div>
+                </div>
+                
+            </div>
+        </div>
+    {% else %}
+        {# --- Logged In View --- #}
+        <div class="logged-in-welcome" style="margin-top: 2rem;">
+            <p style="font-size: 1.2rem;">Добро пожаловать, <strong>{{ current_user.username }}</strong>!</p>
+            <p style="color: var(--text-muted-color); margin-bottom: 1.5rem;">
+                Ваша роль: 
+                {% for role in current_user.roles %}
+                    <strong>{{ role.name }}</strong>
+                {% else %}
+                    Не назначена
+                {% endfor %}
+            </p>
+            <a href="{{ url_for('main.dashboard') }}" class="btn btn-primary">Перейти к Панели управления</a>
+             {# Optionally add link to Admin panel if user is Admin #}
+             {% if current_user.has_role('Administrator') %}
+                 <a href="{{ url_for('admin.user_management') }}" class="btn btn-secondary" style="margin-left: 1rem;">Управление пользователями</a>
+             {% endif %}
+        </div>
+    {% endif %}
+</div>
+{% endblock %} 

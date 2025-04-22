@@ -1,0 +1,140 @@
+{% extends 'base.html' %}
+
+{% block title %}Database Viewer - Sessions - GameFlow Analytics{% endblock %}
+
+{% block content %}
+{# Helper macro for sorting links #}
+{% macro sort_link(column_name, display_text) %}
+    {% set current_sort = request.args.get('sort_by', 'start_time') %}
+    {% set current_order = request.args.get('order', 'desc') %}
+    {% set new_order = 'asc' if current_sort == column_name and current_order == 'desc' else 'desc' %}
+    {% set sort_icon = ' <i class="fas fa-sort"></i>' %}
+    {% if current_sort == column_name %}
+        {% if current_order == 'asc' %}
+            {% set sort_icon = ' <i class="fas fa-sort-up"></i>' %}
+        {% else %}
+            {% set sort_icon = ' <i class="fas fa-sort-down"></i>' %}
+        {% endif %}
+    {% endif %}
+    <a href="{{ url_for('.view_sessions', page=pagination.page, sort_by=column_name, order=new_order, level_id=filter_level_id) }}">{{ display_text }}{{ sort_icon | safe }}</a>
+{% endmacro %}
+
+<h2>Game Sessions Overview</h2>
+
+{# --- Filter Controls --- #}
+<div class="filter-controls" style="margin-bottom: 1rem; padding: 1rem; background-color: var(--secondary-bg-color); border-radius: var(--border-radius-sm); display: flex; flex-wrap: wrap; gap: 1rem; align-items: center;">
+    <form method="GET" action="{{ url_for('.view_sessions') }}" style="display: flex; align-items: center; gap: 1rem; flex-grow: 1;">
+        <div class="form-group" style="min-width: 200px; margin-bottom: 0;">
+            <label for="level_id_filter" style="font-weight: bold; margin-right: 5px;">Filter by Level:</label>
+            <select id="level_id_filter" name="level_id" class="form-control form-control-sm" onchange="this.form.submit()">
+                <option value="">All Levels</option>
+                {% for level in available_levels %}
+                    <option value="{{ level }}" {% if level == filter_level_id %}selected{% endif %}>{{ level }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <a href="{{ url_for('.view_sessions', sort_by=request.args.get('sort_by', 'start_time'), order=request.args.get('order', 'desc')) }}" class="btn btn-secondary btn-sm" role="button">Reset Filter</a>
+    </form>
+
+    {# --- Delete Level Events Button (only shows if admin and level selected) --- #}
+    {% if current_user.has_role('Administrator') and filter_level_id %}
+    <form method="POST" action="{{ url_for('.delete_level_events_all', level_id=filter_level_id) }}" style="margin-left: auto;" onsubmit="return confirm('Are you sure you want to delete ALL events for level \'{{ filter_level_id }}\'? This cannot be undone.');">
+        <button type="submit" class="btn btn-danger btn-sm" title="Delete all events for level {{ filter_level_id }}">
+            <i class="fas fa-trash-alt"></i> Delete All '{{ filter_level_id }}' Events
+        </button>
+    </form>
+    {% endif %}
+</div>
+
+<div class="table-responsive">
+    <table class="table table-striped table-hover table-sm">
+        <thead>
+            <tr>
+                {# Clicking Session ID links to the detailed event view for that session #}
+                <th>Session ID</th> 
+                <th>{{ sort_link('level_id', 'Level ID') }}</th>
+                <th>{{ sort_link('start_time', 'Start Time') }}</th>
+                <th>{{ sort_link('end_time', 'End Time') }}</th>
+                <th>{{ sort_link('event_count', 'Event Count') }}</th>
+                <th>Duration</th>
+                {% if current_user.has_role('Administrator') %}
+                <th>Actions</th> {# New column for admins #}
+                {% endif %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for session in sessions %}
+            <tr>
+                {# Link Session ID to the detailed view #}
+                <td><a href="{{ url_for('.view_session_events', session_id=session.session_id) }}" title="View events for session {{ session.session_id }}">{{ session.session_id }}</a></td>
+                <td>{{ session.first_level_id if session.first_level_id else 'N/A' }}</td> {# Corrected attribute name #}
+                <td>{{ session.start_time.strftime('%d-%m-%Y, %H:%M:%S') if session.start_time else 'N/A' }}</td>
+                <td>{{ session.end_time.strftime('%d-%m-%Y, %H:%M:%S') if session.end_time else 'N/A' }}</td>
+                <td>{{ session.event_count }}</td>
+                <td>
+                    {% if session.start_time and session.end_time %}
+                        {{ (session.end_time - session.start_time) | format_timedelta }}
+                    {% else %}
+                        N/A
+                    {% endif %}
+                </td>
+                {# Add delete button column only for Admins #}
+                {% if current_user.has_role('Administrator') %}
+                <td>
+                     <form method="POST" action="{{ url_for('.delete_session_events_all', session_id=session.session_id) }}" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete ALL events for session {{ session.session_id }}? This cannot be undone.');">
+                        <button type="submit" class="btn btn-danger btn-sm" title="Delete all events for session {{ session.session_id }}">
+                            <i class="fas fa-trash-alt"></i> Delete All
+                        </button>
+                    </form>
+                </td>
+                {% endif %}
+            </tr>
+            {% else %}
+            <tr>
+                {# Adjust colspan based on whether Actions column is shown #}
+                <td colspan="{{ 7 if current_user.has_role('Administrator') else 6 }}" class="text-center">No sessions found matching the criteria.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{# Pagination Links #}
+{% if pagination and pagination.pages > 1 %}
+<nav aria-label="Session navigation">
+    <ul class="pagination justify-content-center">
+        {# Previous Page Link #}
+        <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('.view_sessions', page=pagination.prev_num, sort_by=current_sort_by, order=current_order, level_id=filter_level_id) if pagination.has_prev else '#' }}" aria-label="Previous">
+                <span aria-hidden="true">&laquo;</span>
+            </a>
+        </li>
+        {# Page Number Links #}
+        {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+            {% if page_num %}
+                <li class="page-item {% if page_num == pagination.page %}active{% endif %}">
+                    <a class="page-link" href="{{ url_for('.view_sessions', page=page_num, sort_by=current_sort_by, order=current_order, level_id=filter_level_id) }}">{{ page_num }}</a>
+                </li>
+            {% else %}
+                <li class="page-item disabled"><span class="page-link">...</span></li>
+            {% endif %}
+        {% endfor %}
+        {# Next Page Link #}
+        <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('.view_sessions', page=pagination.next_num, sort_by=current_sort_by, order=current_order, level_id=filter_level_id) if pagination.has_next else '#' }}" aria-label="Next">
+                <span aria-hidden="true">&raquo;</span>
+            </a>
+        </li>
+    </ul>
+</nav>
+<p class="text-center">Showing page {{ pagination.page }} of {{ pagination.pages }} ({{ pagination.total }} total sessions).</p>
+{% elif sessions %}
+<p class="text-center">{{ sessions | length }} session(s) found.</p>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+{{ super() }} {# Include scripts from base.html if any #}
+{# Add any specific JS for this page if needed #}
+{% endblock %} 

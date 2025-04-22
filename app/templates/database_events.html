@@ -1,0 +1,145 @@
+{% extends 'base.html' %}
+
+{% block title %}Database Viewer - Session {{ session_id }} - GameFlow Analytics{% endblock %}
+
+{% block content %}
+{# Helper macro for sorting links #}
+{% macro sort_link(column_name, display_text) %}
+    {% set current_sort = request.args.get('sort_by', 'timestamp') %}
+    {% set current_order = request.args.get('order', 'asc') %}
+    {% set new_order = 'desc' if current_sort == column_name and current_order == 'asc' else 'asc' %}
+    {% set sort_icon = ' <i class="fas fa-sort"></i>' %}
+    {% if current_sort == column_name %}
+        {% if current_order == 'asc' %}
+            {% set sort_icon = ' <i class="fas fa-sort-up"></i>' %}
+        {% else %}
+            {% set sort_icon = ' <i class="fas fa-sort-down"></i>' %}
+        {% endif %}
+    {% endif %}
+    <a href="{{ url_for('.view_session_events', session_id=session_id, page=pagination.page, sort_by=column_name, order=new_order, event_type=filter_event_type, event_data_query=filter_event_data) }}">{{ display_text }}{{ sort_icon | safe }}</a>
+{% endmacro %}
+
+<h2>Game Event Log - Session: <span style="font-family: monospace; font-size: 0.9em;">{{ session_id }}</span></h2>
+
+{# --- Filter Controls --- #}
+<div class="filter-controls" style="margin-bottom: 1rem; padding: 1rem; background-color: var(--secondary-bg-color); border-radius: var(--border-radius-sm); display: flex; flex-wrap: wrap; gap: 1rem; align-items: center;">
+    <form method="GET" action="{{ url_for('.view_session_events', session_id=session_id) }}" style="display: contents;">
+        
+        {# Hidden fields to preserve sorting/pagination state when filtering #}
+        <input type="hidden" name="sort_by" value="{{ request.args.get('sort_by', 'timestamp') }}">
+        <input type="hidden" name="order" value="{{ request.args.get('order', 'asc') }}">
+        
+        {# Event Type Filter #}
+        <div class="form-group" style="min-width: 200px;">
+            <label for="event_type_filter" style="font-weight: bold; margin-right: 5px;">Event Type:</label>
+            <select id="event_type_filter" name="event_type" class="form-control form-control-sm" onchange="this.form.submit()">
+                <option value="">All</option>
+                {% for type in distinct_event_types %}
+                    <option value="{{ type }}" {% if type == filter_event_type %}selected{% endif %}>{{ type | replace('_', ' ') | title }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        {# Event Data Search #}
+        <div class="form-group" style="flex-grow: 1;">
+            <label for="event_data_filter" style="font-weight: bold; margin-right: 5px;">Event Data Contains:</label>
+            <div style="display: flex;">
+                <input type="search" id="event_data_filter" name="event_data_query" class="form-control form-control-sm" placeholder="e.g., specific item, coordinate..." value="{{ filter_event_data }}">
+                <button type="submit" class="btn btn-primary btn-sm" style="margin-left: 5px;">Search</button>
+            </div>
+        </div>
+        
+        {# Reset Button (Optional) #}
+        <a href="{{ url_for('.view_session_events', session_id=session_id, sort_by=request.args.get('sort_by', 'timestamp'), order=request.args.get('order', 'asc')) }}" class="btn btn-secondary btn-sm" role="button">Reset Filters</a>
+    </form>
+</div>
+
+{# --- REMOVED BULK DELETE SECTION --- #}
+
+<div class="table-responsive">
+    <table class="table table-striped table-hover table-sm" style="table-layout: auto;">
+        <thead>
+            <tr>
+                <th>{{ sort_link('id', 'Event ID') }}</th>
+                <th>{{ sort_link('timestamp', 'Timestamp') }}</th>
+                <th>{{ sort_link('event_type', 'Type') }}</th>
+                <th>{{ sort_link('level_id', 'Level ID') }}</th> {# Still useful if level changes mid-session #}
+                <th>Position (X, Y, Z)</th>
+                <th>Event Data</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for event in events %}
+            <tr>
+                <td>{{ event.id }}</td>
+                <td>{{ event.timestamp.strftime('%d-%m-%Y, %H:%M:%S') if event.timestamp else 'N/A' }}</td>
+                <td>{{ event.event_type }}</td>
+                <td>{{ event.level_id if event.level_id else 'N/A' }}</td>
+                <td>
+                    {% if event.position_x is defined and event.position_x is not none or event.position_y is defined and event.position_y is not none or event.position_z is defined and event.position_z is not none %}
+                        {# Check if defined and not none before rounding #}
+                        ({% if event.position_x is defined and event.position_x is not none %}{{ event.position_x | round(2) }}{% else %}N/A{% endif %}, 
+                         {% if event.position_y is defined and event.position_y is not none %}{{ event.position_y | round(2) }}{% else %}N/A{% endif %}, 
+                         {% if event.position_z is defined and event.position_z is not none %}{{ event.position_z | round(2) }}{% else %}N/A{% endif %})
+                    {% else %}
+                        N/A
+                    {% endif %}
+                </td>
+                <td style="max-width: 300px; overflow-wrap: break-word; font-family: monospace; font-size: 0.9em;">
+                    {{ event.event_data | pretty_json }}
+                </td>
+                <td>
+                    {# --- Individual Delete Button --- #}
+                    <form method="POST" action="{{ url_for('.delete_event', event_id=event.id) }}" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete event #{{ event.id }}?');">
+                        <button type="submit" class="btn btn-danger btn-sm" title="Delete Event">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </form>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="8" class="text-center">No events found for this session matching the criteria.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{# Pagination Links #}
+{% if pagination and pagination.pages > 1 %}
+<nav aria-label="Event navigation">
+    <ul class="pagination justify-content-center">
+        {# Previous Page Link #}
+        <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('.view_session_events', session_id=session_id, page=pagination.prev_num, sort_by=current_sort_by, order=current_order, event_type=filter_event_type, event_data_query=filter_event_data) if pagination.has_prev else '#' }}" aria-label="Previous">
+                <span aria-hidden="true">&laquo;</span>
+            </a>
+        </li>
+        {# Page Number Links - Simplified Logic for Brevity #}
+        {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+            {% if page_num %}
+                <li class="page-item {% if page_num == pagination.page %}active{% endif %}">
+                    <a class="page-link" href="{{ url_for('.view_session_events', session_id=session_id, page=page_num, sort_by=current_sort_by, order=current_order, event_type=filter_event_type, event_data_query=filter_event_data) }}">{{ page_num }}</a>
+                </li>
+            {% else %}
+                <li class="page-item disabled"><span class="page-link">...</span></li>
+            {% endif %}
+        {% endfor %}
+        {# Next Page Link #}
+        <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('.view_session_events', session_id=session_id, page=pagination.next_num, sort_by=current_sort_by, order=current_order, event_type=filter_event_type, event_data_query=filter_event_data) if pagination.has_next else '#' }}" aria-label="Next">
+                <span aria-hidden="true">&raquo;</span>
+            </a>
+        </li>
+    </ul>
+</nav>
+<p class="text-center">Showing page {{ pagination.page }} of {{ pagination.pages }} ({{ pagination.total }} total events in this session).</p>
+{% elif events %}
+<p class="text-center">{{ events | length }} event(s) found for this session.</p>
+{% endif %}
+
+{% endblock %}
+
+{# REMOVED SCRIPT SECTION for bulk delete #}
